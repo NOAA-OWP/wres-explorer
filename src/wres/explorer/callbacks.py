@@ -86,9 +86,8 @@ class Callbacks:
                 return
             idx = self.widgets.right_feature_selector.options.index(right_value)
             feature = self.data_manager.feature_mapping.iloc[idx]
-            scatter = self.widgets.map_selector.object.data[0]
-            scatter.lon = [feature["geometry"].x]
-            scatter.lat = [feature["geometry"].y]
+            fig = self.widgets.map_selector.object
+            fig.data[0].selectedpoints = [idx]
             self.widgets.left_feature_selector.value = (
                 self.widgets.left_feature_selector.options[idx]
                 )
