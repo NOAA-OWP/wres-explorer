@@ -2,6 +2,9 @@
 from typing import Type, Iterable
 import pandas as pd
 import geopandas as gpd
+import traceback
+import re
+import logging
 
 METRICS_COLUMNS: dict[str, Type] = {
     "LEFT VARIABLE NAME": "category",
@@ -77,11 +80,11 @@ PAIRS_COLUMNS: dict[str, Type] = {
     "LATEST ISSUE TIME": "datetime",
     "EARLIEST VALID TIME": "datetime",
     "LATEST VALID TIME": "datetime",
-    "EARLIEST LEAD TIME [MAXIMUM OVER PAST PT24H]": "category",
-    "LATEST LEAD TIME [MAXIMUM OVER PAST PT24H]": "category",
+    "EARLIEST LEAD TIME": "category",
+    "LATEST LEAD TIME": "category",
     "REFERENCE TIME": "datetime",
     "VALID TIME": "datetime",
-    "LEAD DURATION [MAXIMUM OVER PAST PT24H]": "category",
+    "LEAD DURATION": "category",
     "OBSERVED IN ft3/s": "numeric",
     "PREDICTED IN ft3/s": "numeric"
 }
@@ -102,7 +105,7 @@ def sort_filepaths(filepaths: Iterable[str]) -> tuple[list[str], list[str]]:
     """
     metrics_filepaths = []
     pairs_filepaths = []
-    
+
     for filepath in filepaths:
         df = pd.read_csv(filepath, nrows=1)
         if "STATISTIC" in df:
@@ -129,31 +132,44 @@ def load_dataframes(
     -------
     pandas.DataFrame
     """
+
+    logging.info(f"Loading CSV data from files {filepaths} and combining into one...")
+
     data = pd.concat(
         [pd.read_csv(fp, dtype=str) for fp in filepaths],
         ignore_index=True
         )
 
     drop = []
+
     for c in data:
+
+        # Take the column name and remove anything in brackets and those brackets.
+        text = re.sub(r'\[[^\]]*\]', '', c).strip()
+
+        # This will remove any column that is all missing. For example,
+        # if an evaluation does not include sampling uncertainty, this
+        # will drop SAMPLE QUANTILE as a column. 
         if data[c].isna().all():
             drop.append(c)
             continue
 
-        if type_mapping[c] == "datetime":
+        if type_mapping[text] == "datetime":
             data[c] = pd.to_datetime(data[c])
             continue
 
-        if type_mapping[c] == "numeric":
+        if type_mapping[text] == "numeric":
             data[c] = pd.to_numeric(data[c], errors="coerce")
             continue
 
-        if type_mapping[c] == "geometry":
+        if type_mapping[text] == "geometry":
             data[c] = gpd.GeoSeries.from_wkt(data[c])
             continue
 
-        data[c] = data[c].astype(type_mapping[c])
+        data[c] = data[c].astype(type_mapping[text])
     
+    logging.info(f"Done loading data.")
+
     return data.drop(drop, axis=1)
 
 def load_metrics_dataframes(
@@ -176,6 +192,8 @@ def load_metrics_dataframes(
     """
     if len(filepaths) == 0:
         return pd.DataFrame({"message": ["no data loaded"]})
+    
+    logging.info(f"Loading metrics CSV output from {filepaths}.")
 
     data = load_dataframes(filepaths, type_mapping)
 
@@ -208,6 +226,9 @@ def load_pairs_dataframes(
     -------
     pandas.DataFrame
     """
+    
+    logging.info(f"Loading pairs CSV output from {filepaths}.")
+
     if len(filepaths) == 0:
         return pd.DataFrame({"message": ["no data loaded"]})
     data = load_dataframes(filepaths, type_mapping)
@@ -262,6 +283,8 @@ class DataManager:
             except pd.errors.ParserError:
                 self.data = pd.DataFrame({"message": ["parsing error"]})
                 self.pairs = pd.DataFrame({"message": ["parsing error"]})
+                traceback.print_exc()
             except KeyError:
                 self.data = pd.DataFrame({"message": ["column error"]})
                 self.pairs = pd.DataFrame({"message": ["column error"]})
+                traceback.print_exc()

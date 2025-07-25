@@ -2,6 +2,15 @@
 import click
 from .dashboard import serve_dashboard
 
+import logging
+import sys
+
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,  # Use logging.DEBUG for more detail
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+)
+
 @click.command()
 def run() -> None:
     """

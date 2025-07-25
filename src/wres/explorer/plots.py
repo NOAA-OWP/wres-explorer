@@ -4,6 +4,7 @@ import geopandas as gpd
 import plotly.graph_objects as go
 from plotly.colors import hex_to_rgb, label_rgb
 import colorcet as cc
+import sys
 
 def invert_color(value: str) -> str:
     """Convert a hex color to an inverted rgb label.
@@ -41,24 +42,6 @@ def generate_map(geodata: gpd.GeoDataFrame) -> go.Figure:
     fig.add_trace(go.Scattermap(
         showlegend=False,
         name="",
-        lat=[geodata["geometry"].y[0]],
-        lon=[geodata["geometry"].x[0]],
-        mode="markers",
-        marker=dict(
-            size=25,
-            color="magenta"
-            ),
-        selected=dict(
-            marker=dict(
-                color="magenta"
-            )
-        ),
-    ))
-
-    # Add Map
-    fig.add_trace(go.Scattermap(
-        showlegend=False,
-        name="",
         lat=geodata["geometry"].y,
         lon=geodata["geometry"].x,
         mode="markers",
@@ -68,7 +51,13 @@ def generate_map(geodata: gpd.GeoDataFrame) -> go.Figure:
             ),
         selected=dict(
             marker=dict(
-                color="cyan"
+                color="magenta"
+            )
+        ), 
+        unselected=dict(
+            marker=dict(
+                color="cyan",
+                opacity=0.5
             )
         ),
         customdata=geodata[[
@@ -98,7 +87,7 @@ def generate_map(geodata: gpd.GeoDataFrame) -> go.Figure:
                 },
             zoom=2
         ),
-        clickmode="event",
+        clickmode="event+select",
         modebar=dict(
             remove=["lasso", "select"]
         ),
@@ -140,13 +129,25 @@ def generate_metrics_plot(
     fig = go.Figure()
     
     for period, d in df.groupby("EVALUATION PERIOD", observed=True):
-        xmin = d[d["SAMPLE QUANTILE"].isna()]["LEAD HOURS MIN"].values
-        xmax = d[d["SAMPLE QUANTILE"].isna()]["LEAD HOURS MAX"].values
-        nom_y = d[d["SAMPLE QUANTILE"].isna()]["STATISTIC"].values
-        upper = d[d["SAMPLE QUANTILE"] == 0.975]["STATISTIC"].values
-        lower = d[d["SAMPLE QUANTILE"] == 0.025]["STATISTIC"].values
+
+        # If SAMPLE QUANTILe is not in the data, its probably because
+        # sampling uncertainty was not part of the evlauation. Don't use it.
+        if "SAMPLE QUANTILE" not in d.columns:
+            xmin = d["LEAD HOURS MIN"].values
+            xmax = d["LEAD HOURS MAX"].values
+            nom_y = d["STATISTIC"].values
+            # Upper and lower are empty since its length is tested later.
+            upper = []
+            lower = [] 
+        # SAMPLE QUANTILE is available, so sampling uncertainty must be handled.
+        else:
+            xmin = d[d["SAMPLE QUANTILE"].isna()]["LEAD HOURS MIN"].values
+            xmax = d[d["SAMPLE QUANTILE"].isna()]["LEAD HOURS MAX"].values
+            nom_y = d[d["SAMPLE QUANTILE"].isna()]["STATISTIC"].values
+            upper = d[d["SAMPLE QUANTILE"] == 0.975]["STATISTIC"].values
+            lower = d[d["SAMPLE QUANTILE"] == 0.025]["STATISTIC"].values
         
-        if len(nom_y) == len(upper) == len(lower):
+        if len(nom_y) == len(upper) == len(lower) > 0:
             error_y = dict(
                 type="data",
                 array=upper - nom_y,
@@ -235,8 +236,8 @@ def generate_pairs_plot(
         name="Observed",
         marker=dict(color="cyan", line=dict(color="black", width=1)),
         hovertemplate=
-        "VALID TIME: %{x}<br>"
-        "OBSERVED: %{y}<br>",
+            "VALID TIME: %{x}<br>"
+            "OBSERVED: %{y}<br>",
         legendgroup="observed"
     ))
 
@@ -250,9 +251,9 @@ def generate_pairs_plot(
             name=time_str,
             line=dict(color=cc.CET_L8[idx], width=1),
             hovertemplate=
-            f"REFERENCE TIME: {time_str}<br>"
-            "VALID TIME: %{x}<br>"
-            "PREDICTED: %{y}<br>",
+                f"REFERENCE TIME: {time_str}<br>"
+                "VALID TIME: %{x}<br>"
+                "PREDICTED: %{y}<br>",
             legendgroup="predicted",
             legendgrouptitle_text="Predicted"
         ))
